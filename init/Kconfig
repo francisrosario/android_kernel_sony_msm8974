@@ -1299,6 +1299,11 @@ config SLOB
 	   allocator. SLOB is generally more space efficient but
 	   does not perform as well on large systems.
 
+config SLQB
+	bool "SLQB (Queued allocator)"
+	help
+	   SLQB is a proposed new slab allocator.
+
 endchoice
 
 config MMAP_ALLOW_UNINITIALIZED
