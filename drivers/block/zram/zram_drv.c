@@ -613,6 +613,8 @@ static void zram_reset_device(struct zram *zram, bool reset_capacity)
 		return;
 	}
 
+	flush_work(&zram->free_work);
+
 	meta = zram->meta;
 	zram->init_done = 0;
 
