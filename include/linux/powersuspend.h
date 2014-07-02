@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2007-2008 Google, Inc.
  * Copyright (C) 2013 Paul Reioux 
+ * Copyright (C) 2014 Carlos Jesús aka TeamMEX@XDA
  *
  * Modified by Jean-Pierre Rasquin <yank555.lu@gmail.com>
  *
