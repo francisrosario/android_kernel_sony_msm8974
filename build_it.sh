@@ -1,10 +1,13 @@
 CUR_TC=/home/trinityhaxxorx/ToolChain/bin/
 
-make clean
+export ARCH=arm
+export CROSS_COMPILE=~/ToolChain/bin/arm-cortex_a15-linux-gnueabihf-
+make distclean
+
 export ARCH=arm 
-export CROSS_COMPILE=${CUR_TC}arm-gnueabi-
+export CROSS_COMPILE=${CUR_TC}arm-cortex_a15-linux-gnueabihf-
 make trinity_defconfig
-make -j8
+make CONFIG_DEBUG_SECTION_MISMATCH=y
 
 echo "checking for compiled kernel..."
 if [ -f arch/arm/boot/zImage ]
@@ -15,11 +18,13 @@ echo "generating device tree..."
 
 cp arch/arm/boot/zImage ../final_files/.
 cp drivers/char/adsprpc.ko ../final_files/.
-cp arch/arm/mach-msm/qdsp6v2/adsp-loader.ko ../final_files/.
-cp net/wireless/cfg80211.ko ../final_files/.
-~/ToolChain/bin/arm-gnueabi-strip --strip-unneeded ../final_files/adsprpc.ko
-~/ToolChain/bin/arm-gnueabi-strip --strip-unneeded ../final_files/adsp-loader.ko
-~/ToolChain/bin/arm-gnueabi-strip --strip-unneeded ../final_files/cfg80211.ko 
+cp drivers/exfat/exfat_fs.ko ../final_files/.
+cp drivers/exfat/exfat_core.ko ../final_files/.
+cp drivers/staging/prima/wlan.ko ../final_files/pronto_wlan.ko
+~/ToolChain/bin/arm-cortex_a15-linux-gnueabihf-strip --strip-unneeded ../final_files/pronto_wlan.ko
+~/ToolChain/bin/arm-cortex_a15-linux-gnueabihf-strip --strip-unneeded ../final_files/exfat_fs.ko
+~/ToolChain/bin/arm-cortex_a15-linux-gnueabihf-strip --strip-unneeded ../final_files/exfat_core.ko
+~/ToolChain/bin/arm-cortex_a15-linux-gnueabihf-strip --strip-unneeded ../final_files/nls_utf8.ko
 
 echo "DONE"
 
