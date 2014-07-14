@@ -42,8 +42,6 @@
  * is now excluded from .config (or <<device>>.defconfig)
  * not to confuse the default governors and cause strange behaviour
  */
-#define CONFIG_CPU_FREQ_SAMPLING_LATENCY_MULTIPLIER		(1000)
-#define CONFIG_CPU_FREQ_MIN_TICKS		(10)
 
 static void (*pm_idle_old)(void);
 static atomic_t active_count = ATOMIC_INIT(0);
