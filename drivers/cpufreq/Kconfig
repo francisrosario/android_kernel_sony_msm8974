@@ -114,6 +114,10 @@ config CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
 	  governor. If unsure have a look at the help section of the
 	  driver. Fallback governor will be the performance governor.
 
+config CPU_FREQ_DEFAULT_GOV_SAVAGEDZEN
+    bool "SavagedZen"
+    select CPU_FREQ_GOV_SAVAGEDZEN
+
 config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	bool "interactive"
 	select CPU_FREQ_GOV_INTERACTIVE
@@ -338,6 +342,10 @@ config CPU_FREQ_GOV_POWERSAVE
 config CPU_FREQ_GOV_WHEATLEY
 	tristate "'wheatley' cpufreq governor"
 	depends on CPU_FREQ
+
+config CPU_FREQ_GOV_SAVAGEDZEN
+    tristate "'savagedzen' cpufreq governor"
+    depends on CPU_FREQ
 
 config CPU_FREQ_GOV_USERSPACE
 	tristate "'userspace' governor for userspace frequency scaling"
