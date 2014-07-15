@@ -376,6 +376,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -Wno-sizeof-
 		   -Wno-format-security \
 		   -Wno-maybe-uninitialized \
            -Wno-unused-function \
+           -Wno-unused-value \
 		   -Wno-array-bounds \
 		   -Wno-sequence-point \
 		   -fno-delete-null-pointer-checks

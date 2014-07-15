@@ -71,6 +71,23 @@ config CPU_FREQ_DEFAULT_GOV_DANCEDANCE
 	select CPU_FREQ_GOV_DANCEDANCE
 	help
 
+config CPU_FREQ_DEFAULT_GOV_ONDEMANDX
+        bool "ondemandx"
+        select CPU_FREQ_GOV_ONDEMANDX	
+        help
+         If in doubt, say N.
+
+config CPU_FREQ_DEFAULT_GOV_ONDEMANDQ
+        bool "ondemandq"
+        select CPU_FREQ_GOV_ONDEMANDQ	
+        help
+         If in doubt, say N.
+
+config CPU_FREQ_DEFAULT_GOV_PEGASUSQ
+        bool "pegasusq"
+        select CPU_FREQ_GOV_PEGASUSQ	
+        help
+         If in doubt, say N.
 config CPU_FREQ_DEFAULT_GOV_POWERSAVE
 	bool "powersave"
 	depends on EXPERT
@@ -340,6 +357,25 @@ config CPU_FREQ_GOV_PERFORMANCE
 	  module will be called cpufreq_performance.
 
 	  If in doubt, say Y.
+
+config CPU_FREQ_GOV_ONDEMANDQ
+        tristate "'ondemandq' cpufreq governor"
+        depends on CPU_FREQ
+        help
+
+          If in doubt, say N.
+
+config CPU_FREQ_GOV_ONDEMANDX
+        tristate "'ondemandx' cpufreq governor"
+        depends on CPU_FREQ
+        help
+
+          If in doubt, say N.
+
+config CPU_FREQ_GOV_PEGASUSQ
+        tristate "'pegasusq' cpufreq governor"
+        depends on CPU_FREQ
+        help
 
 config CPU_FREQ_GOV_POWERSAVE
 	tristate "'powersave' governor"
