@@ -1,4 +1,4 @@
-/* kernel/power/earlysuspend.c
+/* kernel/power/fbearlysuspend.c
  *
  * Copyright (C) 2005-2008 Google, Inc.
  *
@@ -15,173 +15,167 @@
 
 #include <linux/earlysuspend.h>
 #include <linux/module.h>
-#include <linux/mutex.h>
-#include <linux/rtc.h>
-#include <linux/syscalls.h> /* sys_sync */
-#include <linux/wakelock.h>
-#include <linux/workqueue.h>
+#include <linux/wait.h>
 
 #include "power.h"
 
-enum {
-	DEBUG_USER_STATE = 1U << 0,
-	DEBUG_SUSPEND = 1U << 2,
-	DEBUG_VERBOSE = 1U << 3,
-};
-static int debug_mask = DEBUG_USER_STATE;
-module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
+#define MAX_BUF 100
 
-static DEFINE_MUTEX(early_suspend_lock);
-static LIST_HEAD(early_suspend_handlers);
-static void early_suspend(struct work_struct *work);
-static void late_resume(struct work_struct *work);
-static DECLARE_WORK(early_suspend_work, early_suspend);
-static DECLARE_WORK(late_resume_work, late_resume);
-static DEFINE_SPINLOCK(state_lock);
-enum {
-	SUSPEND_REQUESTED = 0x1,
-	SUSPENDED = 0x2,
-	SUSPEND_REQUESTED_AND_SUSPENDED = SUSPEND_REQUESTED | SUSPENDED,
-};
-static int state;
+static wait_queue_head_t fb_state_wq;
+static int display = 1;
+static DEFINE_SPINLOCK(fb_state_lock);
+static enum {
+	FB_STATE_STOPPED_DRAWING,
+	FB_STATE_REQUEST_STOP_DRAWING,
+	FB_STATE_DRAWING_OK,
+} fb_state;
 
-void register_early_suspend(struct early_suspend *handler)
+/* tell userspace to stop drawing, wait for it to stop */
+static void stop_drawing_early_suspend(struct early_suspend *h)
 {
-	struct list_head *pos;
+	int ret;
+	unsigned long irq_flags;
 
-	mutex_lock(&early_suspend_lock);
-	list_for_each(pos, &early_suspend_handlers) {
-		struct early_suspend *e;
-		e = list_entry(pos, struct early_suspend, link);
-		if (e->level > handler->level)
-			break;
-	}
-	list_add_tail(&handler->link, pos);
-	if ((state & SUSPENDED) && handler->suspend)
-		handler->suspend(handler);
-	mutex_unlock(&early_suspend_lock);
+	spin_lock_irqsave(&fb_state_lock, irq_flags);
+	fb_state = FB_STATE_REQUEST_STOP_DRAWING;
+	spin_unlock_irqrestore(&fb_state_lock, irq_flags);
+
+	wake_up_all(&fb_state_wq);
+	ret = wait_event_timeout(fb_state_wq,
+				 fb_state == FB_STATE_STOPPED_DRAWING,
+				 HZ);
+	if (unlikely(fb_state != FB_STATE_STOPPED_DRAWING))
+		pr_warning("stop_drawing_early_suspend: timeout waiting for "
+			   "userspace to stop drawing\n");
 }
-EXPORT_SYMBOL(register_early_suspend);
 
-void unregister_early_suspend(struct early_suspend *handler)
+/* tell userspace to start drawing */
+static void start_drawing_late_resume(struct early_suspend *h)
 {
-	mutex_lock(&early_suspend_lock);
-	list_del(&handler->link);
-	mutex_unlock(&early_suspend_lock);
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&fb_state_lock, irq_flags);
+	fb_state = FB_STATE_DRAWING_OK;
+	spin_unlock_irqrestore(&fb_state_lock, irq_flags);
+	wake_up(&fb_state_wq);
 }
-EXPORT_SYMBOL(unregister_early_suspend);
 
-static void early_suspend(struct work_struct *work)
+static struct early_suspend stop_drawing_early_suspend_desc = {
+	.level = EARLY_SUSPEND_LEVEL_STOP_DRAWING,
+	.suspend = stop_drawing_early_suspend,
+	.resume = start_drawing_late_resume,
+};
+
+static ssize_t wait_for_fb_sleep_show(struct kobject *kobj,
+				      struct kobj_attribute *attr, char *buf)
 {
-	struct early_suspend *pos;
-	unsigned long irqflags;
-	int abort = 0;
+	char *s = buf;
+	int ret;
 
-	mutex_lock(&early_suspend_lock);
-	spin_lock_irqsave(&state_lock, irqflags);
-	if (state == SUSPEND_REQUESTED)
-		state |= SUSPENDED;
-	else
-		abort = 1;
-	spin_unlock_irqrestore(&state_lock, irqflags);
-
-	if (abort) {
-		if (debug_mask & DEBUG_SUSPEND)
-			pr_info("early_suspend: abort, state %d\n", state);
-		mutex_unlock(&early_suspend_lock);
-		goto abort;
-	}
-
-	if (debug_mask & DEBUG_SUSPEND)
-		pr_info("early_suspend: call handlers\n");
-	list_for_each_entry(pos, &early_suspend_handlers, link) {
-		if (pos->suspend != NULL) {
-			if (debug_mask & DEBUG_VERBOSE)
-				pr_info("early_suspend: calling %pf\n", pos->suspend);
-			pos->suspend(pos);
+	ret = wait_event_interruptible(fb_state_wq,
+				       fb_state != FB_STATE_DRAWING_OK);
+	if (ret && fb_state == FB_STATE_DRAWING_OK) {
+		return ret;
+	} else {
+		s += sprintf(buf, "sleeping");
+		if (display == 1) {
+			display = 0;
+			sysfs_notify(power_kobj, NULL, "wait_for_fb_status");
 		}
 	}
-	mutex_unlock(&early_suspend_lock);
 
-	if (debug_mask & DEBUG_SUSPEND)
-		pr_info("early_suspend: sync\n");
-
-	sys_sync();
-abort:
-	spin_lock_irqsave(&state_lock, irqflags);
-	if (state == SUSPEND_REQUESTED_AND_SUSPENDED)
-		wake_unlock(&main_wake_lock);
-	spin_unlock_irqrestore(&state_lock, irqflags);
+	return s - buf;
 }
 
-static void late_resume(struct work_struct *work)
+static ssize_t wait_for_fb_wake_show(struct kobject *kobj,
+				     struct kobj_attribute *attr, char *buf)
 {
-	struct early_suspend *pos;
-	unsigned long irqflags;
-	int abort = 0;
+	char *s = buf;
+	int ret;
+	unsigned long irq_flags;
 
-	mutex_lock(&early_suspend_lock);
-	spin_lock_irqsave(&state_lock, irqflags);
-	if (state == SUSPENDED)
-		state &= ~SUSPENDED;
-	else
-		abort = 1;
-	spin_unlock_irqrestore(&state_lock, irqflags);
-
-	if (abort) {
-		if (debug_mask & DEBUG_SUSPEND)
-			pr_info("late_resume: abort, state %d\n", state);
-		goto abort;
+	spin_lock_irqsave(&fb_state_lock, irq_flags);
+	if (fb_state == FB_STATE_REQUEST_STOP_DRAWING) {
+		fb_state = FB_STATE_STOPPED_DRAWING;
+		wake_up(&fb_state_wq);
 	}
-	if (debug_mask & DEBUG_SUSPEND)
-		pr_info("late_resume: call handlers\n");
-	list_for_each_entry_reverse(pos, &early_suspend_handlers, link) {
-		if (pos->resume != NULL) {
-			if (debug_mask & DEBUG_VERBOSE)
-				pr_info("late_resume: calling %pf\n", pos->resume);
+	spin_unlock_irqrestore(&fb_state_lock, irq_flags);
 
-			pos->resume(pos);
+	ret = wait_event_interruptible(fb_state_wq,
+				       fb_state == FB_STATE_DRAWING_OK);
+	if (ret && fb_state != FB_STATE_DRAWING_OK)
+		return ret;
+	else {
+		s += sprintf(buf, "awake");
+		if (display == 0) {
+			display = 1;
+			sysfs_notify(power_kobj, NULL, "wait_for_fb_status");
 		}
 	}
-	if (debug_mask & DEBUG_SUSPEND)
-		pr_info("late_resume: done\n");
-abort:
-	mutex_unlock(&early_suspend_lock);
+	return s - buf;
 }
 
-void request_suspend_state(suspend_state_t new_state)
+static ssize_t wait_for_fb_status_show(struct kobject *kobj,
+				       struct kobj_attribute *attr, char *buf)
 {
-	unsigned long irqflags;
-	int old_sleep;
+	int ret = 0;
 
-	spin_lock_irqsave(&state_lock, irqflags);
-	old_sleep = state & SUSPEND_REQUESTED;
-	if (debug_mask & DEBUG_USER_STATE) {
-		struct timespec ts;
-		struct rtc_time tm;
-		getnstimeofday(&ts);
-		rtc_time_to_tm(ts.tv_sec, &tm);
-		pr_info("request_suspend_state: %s (%d->%d) at %lld "
-			"(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n",
-			new_state != PM_SUSPEND_ON ? "sleep" : "wakeup",
-			requested_suspend_state, new_state,
-			ktime_to_ns(ktime_get()),
-			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
-	}
-	if (!old_sleep && new_state != PM_SUSPEND_ON) {
-		state |= SUSPEND_REQUESTED;
-		queue_work(suspend_work_queue, &early_suspend_work);
-	} else if (old_sleep && new_state == PM_SUSPEND_ON) {
-		state &= ~SUSPEND_REQUESTED;
-		wake_lock(&main_wake_lock);
-		queue_work(suspend_work_queue, &late_resume_work);
-	}
-	requested_suspend_state = new_state;
-	spin_unlock_irqrestore(&state_lock, irqflags);
+	if (display == 1)
+		ret = snprintf(buf, strnlen("on", MAX_BUF) + 1, "on");
+	else
+		ret = snprintf(buf, strnlen("off", MAX_BUF) + 1, "off");
+
+	return ret;
 }
 
-suspend_state_t get_suspend_state(void)
+#define power_ro_attr(_name)				\
+	static struct kobj_attribute _name##_attr = {	\
+		.attr	= {				\
+			.name = __stringify(_name),	\
+			.mode = 0444,			\
+		},					\
+		.show	= _name##_show,			\
+		.store	= NULL,				\
+	}
+
+power_ro_attr(wait_for_fb_sleep);
+power_ro_attr(wait_for_fb_wake);
+power_ro_attr(wait_for_fb_status);
+
+static struct attribute *g[] = {
+	&wait_for_fb_sleep_attr.attr,
+	&wait_for_fb_wake_attr.attr,
+	&wait_for_fb_status_attr.attr,
+	NULL,
+};
+
+static struct attribute_group attr_group = {
+	.attrs = g,
+};
+
+static int __init android_power_init(void)
 {
-	return requested_suspend_state;
+	int ret;
+
+	init_waitqueue_head(&fb_state_wq);
+	fb_state = FB_STATE_DRAWING_OK;
+
+	ret = sysfs_create_group(power_kobj, &attr_group);
+	if (ret) {
+		pr_err("android_power_init: sysfs_create_group failed\n");
+		return ret;
+	}
+
+	register_early_suspend(&stop_drawing_early_suspend_desc);
+	return 0;
 }
+
+static void  __exit android_power_exit(void)
+{
+	unregister_early_suspend(&stop_drawing_early_suspend_desc);
+	sysfs_remove_group(power_kobj, &attr_group);
+}
+
+module_init(android_power_init);
+module_exit(android_power_exit);
+
