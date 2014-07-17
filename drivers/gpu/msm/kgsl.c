@@ -3473,8 +3473,6 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 
 	nr = _IOC_NR(cmd);
 
-	nr = _IOC_NR(cmd);
-
 	if (cmd & (IOC_IN | IOC_OUT)) {
 		if (_IOC_SIZE(cmd) < sizeof(ustack))
 			uptr = ustack;
