@@ -71,10 +71,10 @@ UTS_TRUNCATE="cut -b -$UTS_LEN"
   
   echo \#define UTS_MACHINE \"$ARCH\"
 
-  echo \#define UTS_VERSION \"`echo $UTS_VERSION | $UTS_TRUNCATE`\"
+  echo \#define UTS_VERSION \"#1 SMP PREEMPT Thu Jun 12 24:20:25\"
 
-  echo \#define LINUX_COMPILE_BY \"Trinity\"
-  echo \#define LINUX_COMPILE_HOST \"-i9xOmega\"
+  echo \#define LINUX_COMPILE_BY \"BuildUser\"
+  echo \#define LINUX_COMPILE_HOST \"BuildHost\"
 
   echo \#define LINUX_COMPILER \"`$CC -v 2>&1 | tail -n 1`\"
 ) > .tmpcompile
