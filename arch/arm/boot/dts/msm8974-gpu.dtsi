@@ -151,7 +151,7 @@
 			qcom,energy-leakage-coeff-d = <0>;
 
 			qcom,power-current-temp = <25>;
-			qcom,power-num-freq = <4>;
+			qcom,power-num-freq = <6>;
 
 			qcom,dcvs-freq@0 {
 				reg = <0>;
