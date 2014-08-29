@@ -1288,8 +1288,6 @@ call_reserveresult(struct rpc_task *task)
 	}
 
 	switch (status) {
-	case -ENOMEM:
-		rpc_delay(task, HZ >> 2);
 	case -EAGAIN:	/* woken up; retry */
 		task->tk_action = call_reserve;
 		return;
