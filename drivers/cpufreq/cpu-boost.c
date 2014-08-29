@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,7 +17,6 @@
 #include <linux/init.h>
 #include <linux/notifier.h>
 #include <linux/cpufreq.h>
-#include <linux/cpu.h>
 #include <linux/sched.h>
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
@@ -59,17 +58,6 @@ module_param(input_boost_ms, uint, 0644);
 static u64 last_input_time;
 #define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
 
-/*
- * The CPUFREQ_ADJUST notifier is used to override the current policy min to
- * make sure policy min >= boost_min. The cpufreq framework then does the job
- * of enforcing the new policy.
- *
- * The sync kthread needs to run on the CPU in question to avoid deadlocks in
- * the wake up code. Achieve this by binding the thread to the respective
- * CPU. But a CPU going offline unbinds threads from that CPU. So, set it up
- * again each time the CPU comes back up. We can use CPUFREQ_START to figure
- * out a CPU is coming online instead of registering for hotplug notifiers.
- */
 static int boost_adjust_notify(struct notifier_block *nb, unsigned long val, void *data)
 {
 	struct cpufreq_policy *policy = data;
@@ -79,27 +67,22 @@ static int boost_adjust_notify(struct notifier_block *nb, unsigned long val, voi
 	unsigned int ib_min = s->input_boost_min;
 	unsigned int min;
 
-	switch (val) {
-	case CPUFREQ_ADJUST:
-		if (!b_min && !ib_min)
-			break;
+	if (val != CPUFREQ_ADJUST)
+		return NOTIFY_OK;
 
-		min = max(b_min, ib_min);
+	if (!b_min && !ib_min)
+		return NOTIFY_OK;
 
-		pr_debug("CPU%u policy min before boost: %u kHz\n",
-			 cpu, policy->min);
-		pr_debug("CPU%u boost min: %u kHz\n", cpu, min);
+	min = max(b_min, ib_min);
 
-		cpufreq_verify_within_limits(policy, min, UINT_MAX);
+	pr_debug("CPU%u policy min before boost: %u kHz\n",
+		 cpu, policy->min);
+	pr_debug("CPU%u boost min: %u kHz\n", cpu, min);
 
-		pr_debug("CPU%u policy min after boost: %u kHz\n",
-			 cpu, policy->min);
-		break;
+	cpufreq_verify_within_limits(policy, min, UINT_MAX);
 
-	case CPUFREQ_START:
-		set_cpus_allowed(s->thread, *cpumask_of(cpu));
-		break;
-	}
+	pr_debug("CPU%u policy min after boost: %u kHz\n",
+		 cpu, policy->min);
 
 	return NOTIFY_OK;
 }
@@ -115,7 +98,7 @@ static void do_boost_rem(struct work_struct *work)
 
 	pr_debug("Removing boost for CPU%d\n", s->cpu);
 	s->boost_min = 0;
-	/* Force policy re-evaluation to trigger adjust notifier. */
+	
 	cpufreq_update_policy(s->cpu);
 }
 
@@ -126,7 +109,7 @@ static void do_input_boost_rem(struct work_struct *work)
 
 	pr_debug("Removing input boost for CPU%d\n", s->cpu);
 	s->input_boost_min = 0;
-	/* Force policy re-evaluation to trigger adjust notifier. */
+	
 	cpufreq_update_policy(s->cpu);
 }
 
@@ -176,16 +159,10 @@ static int boost_mig_sync_thread(void *data)
 		} else {
 			s->boost_min = src_policy.cur;
 		}
-		/* Force policy re-evaluation to trigger adjust notifier. */
-		get_online_cpus();
-		if (cpu_online(dest_cpu)) {
-			cpufreq_update_policy(dest_cpu);
-			queue_delayed_work_on(dest_cpu, cpu_boost_wq,
-				&s->boost_rem, msecs_to_jiffies(boost_ms));
-		} else {
-			s->boost_min = 0;
-		}
-		put_online_cpus();
+		
+		cpufreq_update_policy(dest_cpu);
+		queue_delayed_work_on(s->cpu, cpu_boost_wq,
+			&s->boost_rem, msecs_to_jiffies(boost_ms));
 	}
 
 	return 0;
@@ -220,7 +197,6 @@ static void do_input_boost(struct work_struct *work)
 	struct cpu_sync *i_sync_info;
 	struct cpufreq_policy policy;
 
-	get_online_cpus();
 	for_each_online_cpu(i) {
 
 		i_sync_info = &per_cpu(sync_info, i);
@@ -237,7 +213,6 @@ static void do_input_boost(struct work_struct *work)
 			&i_sync_info->input_boost_rem,
 			msecs_to_jiffies(input_boost_ms));
 	}
-	put_online_cpus();
 }
 
 static void cpuboost_input_event(struct input_handle *handle,
@@ -297,7 +272,7 @@ static void cpuboost_input_disconnect(struct input_handle *handle)
 }
 
 static const struct input_device_id cpuboost_ids[] = {
-	/* multi-touch touchscreen */
+	
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -306,7 +281,7 @@ static const struct input_device_id cpuboost_ids[] = {
 			BIT_MASK(ABS_MT_POSITION_X) |
 			BIT_MASK(ABS_MT_POSITION_Y) },
 	},
-	/* touchpad */
+	
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -314,7 +289,7 @@ static const struct input_device_id cpuboost_ids[] = {
 		.absbit = { [BIT_WORD(ABS_X)] =
 			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
 	},
-	/* Keypad */
+	
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
 		.evbit = { BIT_MASK(EV_KEY) },
@@ -352,7 +327,6 @@ static int cpu_boost_init(void)
 		INIT_DELAYED_WORK(&s->input_boost_rem, do_input_boost_rem);
 		s->thread = kthread_run(boost_mig_sync_thread, (void *)cpu,
 					"boost_sync/%d", cpu);
-		set_cpus_allowed(s->thread, *cpumask_of(cpu));
 	}
 	atomic_notifier_chain_register(&migration_notifier_head,
 					&boost_migration_nb);
