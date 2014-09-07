@@ -463,7 +463,7 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 		dev_info(&pdev->dev, "Speed bin: %d\n", *speed);
 	} else {
 		dev_warn(&pdev->dev, "PVS Bin is not Found or Founds. Setting to Developer Preference\n");
-		*speed = 1;
+		*speed = 3;
 	}
 
 	/* Check PVS_BLOW_STATUS */
@@ -472,7 +472,7 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 		dev_info(&pdev->dev, "PVS bin: %d\n", *pvs);
 	} else {
 		dev_warn(&pdev->dev, "PVS Bin is not Found or Founds. Setting to Developer Preference\n");
-		*pvs = 1;
+		*pvs = 3;
 	}
 
 	dev_info(&pdev->dev, "PVS version: %d\n", *pvs_ver);
@@ -480,10 +480,10 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 #ifdef CONFIG_CPU_OC
 #ifdef CONFIG_OC_ULTIMATE
 	dev_info(&pdev->dev, "DooMLoRD: Forcing CPU OC Ultimate!\n");
-	*speed = 1;
+	*speed = 3;
 #else
 	dev_info(&pdev->dev, "DooMLoRD: Forcing CPU OC!\n");
-	*speed = 1;
+	*speed = 3;
 #endif
 	dev_info(&pdev->dev, "CPU OC: Speed bin: %d\n", *speed);
 #endif
