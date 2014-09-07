@@ -60,7 +60,7 @@ static int devfreq_conservative_func(struct devfreq *devfreq,
 	 * has passed since the last run.
 	 */
 	if (stat.total_time == 0 || priv->bin.total_time < FLOOR)
-		return 0;
+		return 1;
 
 	/* Prevent overflow */
 	if (stat.busy_time >= 1 << 24 || stat.total_time >= 1 << 24) {
@@ -226,7 +226,7 @@ static int devfreq_conservative_handler(struct devfreq *devfreq,
 
 	switch (event) {
 	case DEVFREQ_GOV_START:
-		ret = devfreq_conservative_start(devfreq);
+		devfreq_conservative_start(devfreq);
 		break;
 
 	case DEVFREQ_GOV_STOP:
