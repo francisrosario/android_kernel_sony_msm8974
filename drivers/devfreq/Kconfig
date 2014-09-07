@@ -63,14 +63,6 @@ config DEVFREQ_GOV_USERSPACE
 	  Otherwise, the governor does not change the frequnecy
 	  given at the initialization.
 
-config DEVFREQ_GOV_CONSERVATIVE
-	tristate "Conservative"
-	depends on MSM_KGSL
-	help
-	  Chooses frequency based on the recent load on the device. Works
-	  similar as conservative governor of cpufreq does and implements
-	  the useful optimizations from Adreno TZ.
-
 config DEVFREQ_GOV_MSM_ADRENO_TZ
 	tristate "MSM Adreno Trustzone"
 	depends on MSM_KGSL && MSM_SCM
