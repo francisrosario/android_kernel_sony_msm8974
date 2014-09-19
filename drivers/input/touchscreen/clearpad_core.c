@@ -1803,7 +1803,9 @@ static int synaptics_clearpad_set_suspend_mode(struct synaptics_clearpad *this)
 
 	dev_dbg(&this->pdev->dev, "%s\n", __func__);
 
+
 	if (this->easy_wakeup_config.gesture_enable) {
+		printk("Someone was here");
 		rc = synaptics_put_bit(this, SYNF(F11_2D, CTRL, 0x00),
 			XY_REPORTING_MODE_WAKEUP_GESTURE_MODE,
 			XY_REPORTING_MODE);
@@ -1816,6 +1818,7 @@ static int synaptics_clearpad_set_suspend_mode(struct synaptics_clearpad *this)
 		this->ew_timeout = jiffies - 1;
 		usleep_range(10000, 11000);
 		LOG_CHECK(this, "enter doze mode\n");
+		
 	} else {
 		rc = synaptics_put_bit(this, SYNF(F01_RMI, CTRL, 0x00),
 			DEVICE_CONTROL_SLEEP_MODE_SENSOR_SLEEP,
@@ -2187,6 +2190,31 @@ static void synaptics_funcarea_down(struct synaptics_clearpad *this,
 	}
 }
 
+static int get_num_fingers_f12(struct synaptics_clearpad *this,
+	int *num_fingers)
+{
+	int rc, num;
+	u16 val, mask;
+	const int max_objects = this->extents.n_fingers;
+
+	rc = synaptics_read(SYNF2(this, F12_2D, DATA, OBJ_ATTENTION),
+		(u8 *)&val, sizeof(val));
+	if (rc)
+		goto error;
+
+	val = le16_to_cpu(val);
+
+	for (num = 0, mask = 0x1; num < max_objects; num++, mask <<= 1)
+		if (val < mask)
+			break;
+
+	*num_fingers = num;
+
+	dev_dbg(&this->pdev->dev, "fingers=%d, 0x%04hX", num, val);
+error:
+	return rc;
+}
+
 static void synaptics_funcarea_up(struct synaptics_clearpad *this,
 				  struct synaptics_pointer *pointer)
 {
@@ -2208,6 +2236,17 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
 		LOG_EVENT(this, "%s up\n", valid ? "pt" : "unused pt");
 		if (!valid)
 			break;
+
+		if (this->easy_wakeup_config.gesture_enable && !(this->active & SYN_ACTIVE_POWER)) {
+ 			LOG_CHECK(this, "D2W: difference: %u", jiffies_to_msecs(this->ew_timeout) - jiffies_to_msecs(jiffies));
+ 			if (time_after(jiffies, this->ew_timeout)) {
+ 				this->ew_timeout = jiffies + msecs_to_jiffies(this->easy_wakeup_config.timeout_delay);
+ 				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(this->ew_timeout));
+ 			} else {
+ 				LOG_CHECK(this, "D2W: Unlock!");
+ 				evdt_execute(this->evdt_node, this->input, 0102);
+ 			}
+ 		}			
 		input_mt_slot(idev, pointer->cur.id);
 		input_mt_report_slot_state(idev, pointer->cur.tool, false);
 		break;
@@ -2454,31 +2493,6 @@ exit:
 	return rc;
 }
 
-static int get_num_fingers_f12(struct synaptics_clearpad *this,
-	int *num_fingers)
-{
-	int rc, num;
-	u16 val, mask;
-	const int max_objects = this->extents.n_fingers;
-
-	rc = synaptics_read(SYNF2(this, F12_2D, DATA, OBJ_ATTENTION),
-		(u8 *)&val, sizeof(val));
-	if (rc)
-		goto error;
-
-	val = le16_to_cpu(val);
-
-	for (num = 0, mask = 0x1; num < max_objects; num++, mask <<= 1)
-		if (val < mask)
-			break;
-
-	*num_fingers = num;
-
-	dev_dbg(&this->pdev->dev, "fingers=%d, 0x%04hX", num, val);
-error:
-	return rc;
-}
-
 static int synaptics_clearpad_read_fingers_f12(struct synaptics_clearpad *this)
 {
 	int rc, finger, num_fingers;
@@ -2582,6 +2596,7 @@ static int synaptics_clearpad_process_F11_2D(struct synaptics_clearpad *this)
 	if (this->easy_wakeup_config.gesture_enable &&
 	    !(this->active & SYN_ACTIVE_POWER)) {
 		rc = synaptics_clearpad_handle_gesture(this);
+	printk("Looks like no one came here");
 		goto exit;
 	}
 

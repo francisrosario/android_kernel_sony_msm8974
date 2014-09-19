@@ -62,7 +62,7 @@
 			por_delay_after = <200>;
 			wakeup_gesture {
 				double_tap {
-					gesture_code = <0x0102>;
+					gesture_code = <0x42>;
 					event_00 {
 						type = <2>; /* LOG */
 						message = "=== DOUBLE TAP ===";
