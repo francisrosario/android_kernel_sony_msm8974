@@ -20,6 +20,7 @@
 #include <linux/delay.h>
 #include <linux/miscdevice.h>
 #include <linux/clearpad.h>
+#include <linux/input/evdt_helper.h>
 #include <mach/gpio.h>
 #include <linux/ctype.h>
 #include <linux/firmware.h>
@@ -66,6 +67,7 @@
 #define HWTEST_SIZE_OF_ONE_HIGH_RX		3
 #define HWTEST_SIZE_OF_TX_TO_TX_SHORT(x)	(((x) + 7) / 8)
 #define SYNAPTICS_WATCHDOG_POLL_DEFAULT_INTERVAL HZ
+#define SYNAPTICS_WAKEUP_GESTURE		"wakeup_gesture"
 
 #define SYN_ADDRESS(th, func, type, addr) ((th)->pdt[func].base[type] + (addr))
 #define SYN_PAGE(th, func) ((th)->pdt[func].page)
@@ -461,6 +463,8 @@ struct synaptics_clearpad {
 	u32 touch_pressure_enabled;
 	u32 touch_size_enabled;
 	u32 touch_orientation_enabled;
+	struct device_node *evdt_node;
+	u32 wakeup_gesture_support;
 	unsigned long ew_timeout;
 	struct delayed_work wd_poll_work;
 	int wd_poll_t_jf;
@@ -2517,6 +2521,9 @@ static int synaptics_clearpad_handle_gesture(struct synaptics_clearpad *this)
 			this->easy_wakeup_config.timeout_delay);
 	else
 		goto exit;
+	
+	evdt_execute(this->evdt_node, this->input, wakeint);
+	
 exit:
 	return rc;
 }
@@ -3342,6 +3349,19 @@ static void clearpad_touch_config_dt(struct synaptics_clearpad *this)
 	if (of_property_read_u32(devnode, "por_delay_after",
 		&this->por_delay_after))
 		dev_warn(&this->pdev->dev, "no por_delay_after config\n");
+
+	if (of_property_read_bool(devnode, "large_panel"))
+		this->easy_wakeup_config.large_panel = true;
+	else
+		dev_warn(&this->pdev->dev, "no large_panel\n");
+
+	if (of_property_read_u32(devnode, "wakeup_gesture_support",
+		&this->wakeup_gesture_support))
+		dev_warn(&this->pdev->dev, "no wakeup_gesture_support\n");
+
+	if (of_property_read_u32(devnode, "wakeup_gesture_timeout",
+		&this->easy_wakeup_config.timeout_delay))
+		dev_warn(&this->pdev->dev, "no wakeup_gesture_timeout\n");
 }
 
 static int synaptics_clearpad_input_init(struct synaptics_clearpad *this,
@@ -3373,6 +3393,23 @@ exit:
 static void synaptics_clearpad_input_ev_init(struct synaptics_clearpad *this)
 {
 	int rc = 0;
+
+	if (this->wakeup_gesture_support) {
+		this->evdt_node = evdt_initialize(this->bdata->dev, this->input,
+						SYNAPTICS_WAKEUP_GESTURE);
+		if (!this->evdt_node) {
+			dev_err(&this->pdev->dev, "no wakeup_gesture dt\n");
+		} else {
+			rc = device_create_file(&this->input->dev,
+					&clearpad_wakeup_gesture_attr);
+			if (rc)
+				dev_err(&this->pdev->dev,
+					"sysfs_create_file failed: %d\n", rc);
+
+			dev_info(&this->pdev->dev, "Touch Wakeup Feature OK\n");
+			device_init_wakeup(&this->pdev->dev, 0);
+		}
+	}
 
 }
 
@@ -4205,9 +4242,7 @@ static int __devinit clearpad_probe(struct platform_device *pdev)
 		goto err_input_device;
 	}
 
-	rc = synaptics_clearpad_input_ev_init(this);
-	if (rc)
-		goto err_input_device_pen;
+	synaptics_clearpad_input_ev_init(this);
 
 	this->state = SYN_STATE_RUNNING;
 
@@ -4275,8 +4310,6 @@ err_unregister_fb:
 #ifdef CONFIG_FB
 	fb_unregister_client(&this->fb_notif);
 #endif
-err_input_device_pen:
-	input_unregister_device(this->input_pen);
 err_input_device:
 	input_unregister_device(this->input);
 err_gpio_teardown:
