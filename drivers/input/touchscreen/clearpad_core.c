@@ -698,7 +698,7 @@ static int clearpad_flip_config_get(u8 module_id, u8 rev)
 
 static struct evgen_block *clearpad_evgen_block_get(u8 module_id, u8 rev)
 {
-	return evgen_blocks;
+	return NULL;
 }
 
 static void synaptics_clearpad_set_irq(struct synaptics_clearpad *this,
