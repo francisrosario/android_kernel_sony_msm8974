@@ -125,7 +125,8 @@
 
 #define CLEARPAD_VDD "touch_vdd"
 #define CLEARPAD_VIO "touch_vio"
-/* Fix By F(X)ThaxxorX - BackPorted
+	
+/* Fix By F(X)ThaxxorX - BackPorted*/
 /* Hits on different areas shouldn't register as a double tap (e.g top and bottom) */
 #define DOUBLE_TAP_TO_WAKE_FEATHER 200
 static int previous_x, previous_y;
