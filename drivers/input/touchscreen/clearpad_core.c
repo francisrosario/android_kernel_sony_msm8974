@@ -40,7 +40,6 @@
 #ifdef CONFIG_ARM
 #include <asm/mach-types.h>
 #endif
-#include <linux/lcd_notify.h>
 
 #define SYNAPTICS_CLEARPAD_VENDOR		0x1
 #define SYNAPTICS_MAX_N_FINGERS			10
@@ -478,12 +477,7 @@ struct synaptics_clearpad {
 	const char *reset_cause;
 };
 
-#define DOUBLE_TAP_TO_WAKE_TIMEOUT 700
-#define DOUBLE_TAP_TO_WAKE_FEATHER 200
-/* Screen will always be on after boot */
-bool lcd_on = true;
-unsigned long d2w_timeout;
-static int previous_x, previous_y;
+#define DOUBLE_TAP_TO_WAKE_TIMEOUT 210
 
 static struct evgen_record double_tap[] = {
 	{
@@ -555,42 +549,6 @@ static struct evgen_block evgen_blocks[] = {
 		.records = NULL,
 	}
 };
-
-static struct notifier_block d2w_lcd_notif;
-
-static int lcd_notifier_callback(struct notifier_block *this, unsigned long event, void *data)
-{
-	switch (event) {
-	case LCD_EVENT_ON_END:
-		lcd_on = true;
-		break;
-	case LCD_EVENT_OFF_END:
-		lcd_on = false;
-		d2w_timeout = jiffies -1;
-		break;
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-
-/* From doubletap2wake.c */
-static unsigned int calc_feather(int coord, int prev_coord)
-{
-	int calc_coord = 0;
-	calc_coord = coord-prev_coord;
-	if (calc_coord < 0)
-		calc_coord = calc_coord * (-1);
-	return calc_coord;
-}
-
-static bool is_close_to_previous_hit(int x, int y)
-{
-	return (calc_feather(x, previous_x) < DOUBLE_TAP_TO_WAKE_FEATHER)
-		&& (calc_feather(y, previous_y) < DOUBLE_TAP_TO_WAKE_FEATHER);
-}
 
 static void synaptics_funcarea_initialize(struct synaptics_clearpad *this);
 static void synaptics_clearpad_reset_power(struct synaptics_clearpad *this,
@@ -2341,24 +2299,17 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
 		LOG_EVENT(this, "%s up\n", valid ? "pt" : "unused pt");
 		if (!valid)
 			break;
-        if (this->easy_wakeup_config.gesture_enable && !lcd_on && cur->id == 0) {
-			LOG_CHECK(this, "D2W: difference: %u", jiffies_to_msecs(d2w_timeout) - jiffies_to_msecs(jiffies));
-   		if (time_after(jiffies, d2w_timeout)) {
+        if (this->easy_wakeup_config.gesture_enable && !(this->active & SYN_ACTIVE_POWER)) {
+			LOG_CHECK(this, "D2W: difference: %u", jiffies_to_msecs(this->ew_timeout) - jiffies_to_msecs(jiffies));
+			if (time_after(jiffies, this->ew_timeout)) {
 				/* Not sure if using this->easy_wakeup_config.timeout_delay is wise, where is it set from? */
- 				d2w_timeout = jiffies + msecs_to_jiffies(DOUBLE_TAP_TO_WAKE_TIMEOUT);
- 				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(d2w_timeout));
- 			} else {
-			if (is_close_to_previous_hit(cur->x, cur->y)) {
-					LOG_CHECK(this, "D2W: Unlock!");
+				this->ew_timeout = jiffies + msecs_to_jiffies(DOUBLE_TAP_TO_WAKE_TIMEOUT);
+				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(this->ew_timeout));
+		} else {
+				LOG_CHECK(this, "D2W: Unlock!");
 				evgen_execute(this->input, this->evgen_blocks, "double_tap");
-				} else {
-					LOG_CHECK(this, "D2W: Second tap too far off");
-				}
 			}
-
-			previous_x = cur->x;
-			previous_y = cur->y;
- 		}
+		}
 
 		if (s2w_enable) {
 			if (this->easy_wakeup_config.gesture_enable
@@ -3360,7 +3311,7 @@ enable:
 	rc = request_threaded_irq(this->irq,
 				synaptics_clearpad_hard_handler,
 				synaptics_clearpad_threaded_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND | IRQF_EARLY_RESUME,
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 				this->pdev->dev.driver->name,
 				&this->pdev->dev);
 	if (rc) {
@@ -4543,7 +4494,7 @@ static int __devinit clearpad_probe(struct platform_device *pdev)
 	rc = request_threaded_irq(this->irq,
 				synaptics_clearpad_hard_handler,
 				synaptics_clearpad_threaded_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_NO_SUSPEND | IRQF_EARLY_RESUME,
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 				this->pdev->dev.driver->name,
 				&this->pdev->dev);
 	if (rc) {
@@ -4656,14 +4607,11 @@ static struct platform_driver clearpad_driver = {
 
 static int __init clearpad_init(void)
 {
-	d2w_lcd_notif.notifier_call = lcd_notifier_callback;
-	lcd_register_client(&d2w_lcd_notif);
 	return platform_driver_register(&clearpad_driver);
 }
 
 static void __exit clearpad_exit(void)
 {
-	lcd_unregister_client(&d2w_lcd_notif);
 	platform_driver_unregister(&clearpad_driver);
 }
 
