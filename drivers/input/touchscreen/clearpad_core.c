@@ -38,6 +38,7 @@
 #ifdef CONFIG_ARM
 #include <asm/mach-types.h>
 #endif
+#include <linux/lcd_notify.h>
 
 #define SYNAPTICS_CLEARPAD_VENDOR		0x1
 #define SYNAPTICS_MAX_N_FINGERS			10
@@ -481,6 +482,9 @@ struct synaptics_clearpad {
 	const char *reset_cause;
 };
 
+bool lcd_on;
+unsigned long d2w_timeout;
+
 /* From doubletap2wake.c */
 static unsigned int calc_feather(int coord, int prev_coord)
 {
@@ -495,6 +499,25 @@ static bool is_close_to_previous_hit(int x, int y)
 {
 	return (calc_feather(x, previous_x) < DOUBLE_TAP_TO_WAKE_FEATHER)
 		&& (calc_feather(y, previous_y) < DOUBLE_TAP_TO_WAKE_FEATHER);
+}
+
+static struct notifier_block d2w_lcd_notif;
+
+static int lcd_notifier_callback(struct notifier_block *this, unsigned long event, void *data)
+{
+	switch (event) {
+	case LCD_EVENT_ON_END:
+		lcd_on = true;
+		break;
+	case LCD_EVENT_OFF_END:
+		lcd_on = false;
+		d2w_timeout = jiffies -1;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
 }
 
 static void synaptics_funcarea_initialize(struct synaptics_clearpad *this);
@@ -2257,11 +2280,11 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
 		if (!valid)
 			break;
 
-		if (this->easy_wakeup_config.gesture_enable && !(this->active & SYN_ACTIVE_POWER)) {
- 			LOG_CHECK(this, "D2W: difference: %u", jiffies_to_msecs(this->ew_timeout) - jiffies_to_msecs(jiffies));
- 			if (time_after(jiffies, this->ew_timeout)) {
- 				this->ew_timeout = jiffies + msecs_to_jiffies(this->easy_wakeup_config.timeout_delay);
- 				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(this->ew_timeout));
+		if (this->easy_wakeup_config.gesture_enable && !lcd_on) {
+ 			LOG_CHECK(this, "D2W: difference: %u", jiffies_to_msecs(d2w_timeout) - jiffies_to_msecs(jiffies));
+ 			if (time_after(jiffies, d2w_timeout)) {
+ 				d2w_timeout = jiffies + msecs_to_jiffies(this->easy_wakeup_config.timeout_delay);
+ 				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(d2w_timeout));
  			} else {
  				if (is_close_to_previous_hit(cur->x, cur->y)) {
  				LOG_CHECK(this, "D2W: Unlock!");
@@ -4432,11 +4455,14 @@ static struct platform_driver clearpad_driver = {
 
 static int __init clearpad_init(void)
 {
+	d2w_lcd_notif.notifier_call = lcd_notifier_callback;
+	lcd_register_client(&d2w_lcd_notif);
 	return platform_driver_register(&clearpad_driver);
 }
 
 static void __exit clearpad_exit(void)
 {
+	lcd_unregister_client(&d2w_lcd_notif);
 	platform_driver_unregister(&clearpad_driver);
 }
 
