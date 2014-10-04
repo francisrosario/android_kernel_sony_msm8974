@@ -3593,7 +3593,7 @@ static int synaptics_clearpad_pm_resume(struct device *dev)
 static int synaptics_clearpad_pm_suspend_noirq(struct device *dev)
 {
 	struct synaptics_clearpad *this = dev_get_drvdata(dev);
-	if ((this->irq_pending && device_may_wakeup(dev)) || this->easy_wakeup_config.gesture_enable) {
+	if (this->irq_pending && device_may_wakeup(dev)) {
 		dev_info(&this->pdev->dev, "Need to resume\n");
 		return -EBUSY;
 	}
