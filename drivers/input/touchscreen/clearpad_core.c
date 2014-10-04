@@ -124,6 +124,10 @@
 
 #define CLEARPAD_VDD "touch_vdd"
 #define CLEARPAD_VIO "touch_vio"
+/* Fix By F(X)ThaxxorX - BackPorted
+/* Hits on different areas shouldn't register as a double tap (e.g top and bottom) */
+#define DOUBLE_TAP_TO_WAKE_FEATHER 200
+static int previous_x, previous_y;
 
 #define LOGx(this, LEVEL, X, ...)				\
 do {								\
@@ -476,6 +480,22 @@ struct synaptics_clearpad {
 	u32 reset_count;
 	const char *reset_cause;
 };
+
+/* From doubletap2wake.c */
+static unsigned int calc_feather(int coord, int prev_coord)
+{
+	int calc_coord = 0;
+	calc_coord = coord-prev_coord;
+	if (calc_coord < 0)
+		calc_coord = calc_coord * (-1);
+	return calc_coord;
+}
+
+static bool is_close_to_previous_hit(int x, int y)
+{
+	return (calc_feather(x, previous_x) < DOUBLE_TAP_TO_WAKE_FEATHER)
+		&& (calc_feather(y, previous_y) < DOUBLE_TAP_TO_WAKE_FEATHER);
+}
 
 static void synaptics_funcarea_initialize(struct synaptics_clearpad *this);
 static void synaptics_clearpad_reset_power(struct synaptics_clearpad *this,
@@ -2243,10 +2263,16 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
  				this->ew_timeout = jiffies + msecs_to_jiffies(this->easy_wakeup_config.timeout_delay);
  				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(this->ew_timeout));
  			} else {
+ 				if (is_close_to_previous_hit(cur->x, cur->y)) {
  				LOG_CHECK(this, "D2W: Unlock!");
  				evdt_execute(this->evdt_node, this->input, 0102);
+ 		    } else {
+ 		    	LOG_CHECK(this, "D2W: Second tap too far off");
  			}
- 		}			
+ 			previous_x = cur->x;
+			previous_y = cur->y;
+ 		}
+
 		input_mt_slot(idev, pointer->cur.id);
 		input_mt_report_slot_state(idev, pointer->cur.tool, false);
 		break;
