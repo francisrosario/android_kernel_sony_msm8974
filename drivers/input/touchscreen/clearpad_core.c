@@ -520,11 +520,6 @@ static int lcd_notifier_callback(struct notifier_block *this, unsigned long even
 	return 0;
 }
 
-static void doubletap2wake_reset(void) {
-	previous_x = 0;
-	previous_y = 0;
-}
-
 static void synaptics_funcarea_initialize(struct synaptics_clearpad *this);
 static void synaptics_clearpad_reset_power(struct synaptics_clearpad *this,
 					   const char *cause);
@@ -2294,12 +2289,10 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
  				if (is_close_to_previous_hit(cur->x, cur->y)) {
  				 LOG_CHECK(this, "D2W: Unlock!");
  				 evdt_execute(this->evdt_node, this->input, 0102);
- 				 doubletap2wake_reset();
  		    } else {
  		    	LOG_CHECK(this, "D2W: Second tap too far off");
  			}
  		}
- 		    doubletap2wake_reset();
  			previous_x = cur->x;
 			previous_y = cur->y;
  		}
