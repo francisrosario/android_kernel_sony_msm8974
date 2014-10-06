@@ -478,28 +478,9 @@ struct synaptics_clearpad {
 	const char *reset_cause;
 };
 
-bool lcd_on = true;
+bool lcd_on;
 unsigned long d2w_timeout;
 /* Fix By F(X)ThaxxorX - BackPorted*/
-/* Hits on different areas shouldn't register as a double tap (e.g top and bottom) */
-#define DOUBLE_TAP_TO_WAKE_FEATHER 200
-static int previous_x, previous_y;
-
-/* From doubletap2wake.c */
-static unsigned int calc_feather(int coord, int prev_coord)
-{
-	int calc_coord = 0;
-	calc_coord = coord-prev_coord;
-	if (calc_coord < 0)
-		calc_coord = calc_coord * (-1);
-	return calc_coord;
-}
-
-static bool is_close_to_previous_hit(int x, int y)
-{
-	return (calc_feather(x, previous_x) < DOUBLE_TAP_TO_WAKE_FEATHER)
-		&& (calc_feather(y, previous_y) < DOUBLE_TAP_TO_WAKE_FEATHER);
-}
 
 static struct notifier_block d2w_lcd_notif;
 
@@ -2265,7 +2246,7 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
 	struct input_dev *idev;
 	struct synaptics_point *cur = &pointer->cur;
 	bool valid;
-
+ 
 	switch (pointer->funcarea->func) {
 	case SYN_FUNCAREA_INSENSIBLE:
 		LOG_EVENT(this, "insensible up\n");
@@ -2280,22 +2261,13 @@ static void synaptics_funcarea_up(struct synaptics_clearpad *this,
 		if (!valid)
 			break;
 
-		if (this->easy_wakeup_config.gesture_enable && !lcd_on && cur->id == 0) {
- 			LOG_CHECK(this, "D2W: difference: %u", jiffies_to_msecs(d2w_timeout) - jiffies_to_msecs(jiffies));
+		if (this->easy_wakeup_config.gesture_enable && !lcd_on) {
  			if (time_after(jiffies, d2w_timeout)) {
  				d2w_timeout = jiffies + msecs_to_jiffies(this->easy_wakeup_config.timeout_delay);
- 				LOG_CHECK(this, "D2W: now: %u | new timeout: %u", jiffies_to_msecs(jiffies), jiffies_to_msecs(d2w_timeout));
- 		} else {
- 				if (is_close_to_previous_hit(cur->x, cur->y)) {
- 				 LOG_CHECK(this, "D2W: Unlock!");
- 				 evdt_execute(this->evdt_node, this->input, 0102);
  		    } else {
- 		    	LOG_CHECK(this, "D2W: Second tap too far off");
- 			}
- 		}
- 			previous_x = cur->x;
-			previous_y = cur->y;
- 		}
+ 		    	evdt_execute(this->evdt_node, this->input, 0102);
+ 		    }    
+        }
 
 		input_mt_slot(idev, pointer->cur.id);
 		input_mt_report_slot_state(idev, pointer->cur.tool, false);
@@ -3241,7 +3213,7 @@ enable:
 	rc = request_threaded_irq(this->irq,
 				synaptics_clearpad_hard_handler,
 				synaptics_clearpad_threaded_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_EARLY_RESUME,
 				this->pdev->dev.driver->name,
 				&this->pdev->dev);
 	if (rc) {
@@ -3417,8 +3389,6 @@ static void clearpad_touch_config_dt(struct synaptics_clearpad *this)
 
 	if (of_property_read_bool(devnode, "large_panel"))
 		this->easy_wakeup_config.large_panel = true;
-	else
-		dev_warn(&this->pdev->dev, "no large_panel\n");
 
 	if (of_property_read_u32(devnode, "wakeup_gesture_support",
 		&this->wakeup_gesture_support))
@@ -4345,7 +4315,7 @@ static int __devinit clearpad_probe(struct platform_device *pdev)
 	rc = request_threaded_irq(this->irq,
 				synaptics_clearpad_hard_handler,
 				synaptics_clearpad_threaded_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT | IRQF_EARLY_RESUME,
 				this->pdev->dev.driver->name,
 				&this->pdev->dev);
 	if (rc) {
