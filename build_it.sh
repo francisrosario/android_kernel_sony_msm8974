@@ -3,6 +3,7 @@ CUR_TC=/home/trinityhaxxorx/ToolChain/bin/
 export ARCH=arm
 export CROSS_COMPILE=~/ToolChain/bin/arm-cortex_a15-linux-gnueabihf-
 make distclean
+make clean
 
 export ARCH=arm 
 export CROSS_COMPILE=${CUR_TC}arm-cortex_a15-linux-gnueabihf-
