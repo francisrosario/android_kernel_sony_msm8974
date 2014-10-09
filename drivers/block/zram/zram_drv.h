@@ -2,7 +2,6 @@
  * Compressed RAM block device
  *
  * Copyright (C) 2008, 2009, 2010  Nitin Gupta
- *               2012, 2013 Minchan Kim
  *
  * This code is released using a dual license strategy: BSD/GPL
  * You can choose the licence that better fits your requirements.
@@ -10,6 +9,7 @@
  * Released under the terms of 3-clause BSD License
  * Released under the terms of GNU General Public License Version 2.0
  *
+ * Project home: http://compcache.googlecode.com
  */
 
 #ifndef _ZRAM_DRV_H_
@@ -19,10 +19,6 @@
 #include <linux/mutex.h>
 #include <linux/zsmalloc.h>
 
-/*
- * Some arbitrary value. This is just to catch
- * invalid value for num_devices module parameter.
- */
 static const unsigned max_num_devices = 32;
 
 /*-- Configurable parameters */
@@ -50,7 +46,6 @@ static const size_t max_zpage_size = PAGE_SIZE / 4 * 3;
 #define ZRAM_SECTOR_PER_LOGICAL_BLOCK	\
 	(1 << (ZRAM_LOGICAL_BLOCK_SHIFT - SECTOR_SHIFT))
 
-/* Flags for zram pages (table[page_no].flags) */
 enum zram_pageflags {
 	/* Page consists entirely of zeros */
 	ZRAM_ZERO,
@@ -58,9 +53,7 @@ enum zram_pageflags {
 	__NR_ZRAM_PAGEFLAGS,
 };
 
-/*-- Data structures */
 
-/* Allocated for each disk page */
 struct table {
 	unsigned long handle;
 	u16 size;	/* object size (excluding header) */
@@ -68,6 +61,10 @@ struct table {
 	u8 flags;
 } __aligned(4);
 
+/*
+ * All 64bit fields should only be manipulated by 64bit atomic accessors.
+ * All modifications to 32bit counter should be protected by zram->lock.
+ */
 struct zram_stats {
 	atomic64_t compr_size;	/* compressed size of pages stored */
 	atomic64_t num_reads;	/* failed + successful */
@@ -76,33 +73,44 @@ struct zram_stats {
 	atomic64_t failed_writes;	/* can happen when memory is too low */
 	atomic64_t invalid_io;	/* non-page-aligned I/O requests */
 	atomic64_t notify_free;	/* no. of swap slot free notifications */
-	atomic_t pages_zero;		/* no. of zero filled pages */
-	atomic_t pages_stored;	/* no. of pages currently stored */
-	atomic_t good_compress;	/* % of pages with compression ratio<=50% */
-	atomic_t bad_compress;	/* % of pages with compression ratio>=75% */
+	u32 pages_zero;		/* no. of zero filled pages */
+	u32 pages_stored;	/* no. of pages currently stored */
+	u32 good_compress;	/* % of pages with compression ratio<=50% */
+	u32 bad_compress;	/* % of pages with compression ratio>=75% */
 };
 
 struct zram_meta {
-	rwlock_t tb_lock;	/* protect table */
 	void *compress_workmem;
 	void *compress_buffer;
 	struct table *table;
 	struct zs_pool *mem_pool;
-	struct mutex buffer_lock; /* protect compress buffers */
+};
+
+struct zram_slot_free {
+	unsigned long index;
+	struct zram_slot_free *next;
 };
 
 struct zram {
 	struct zram_meta *meta;
+	struct rw_semaphore lock; /* protect compression buffers, table,
+				   * 32bit stat counters against concurrent
+				   * notifications, reads and writes */
+
+	struct work_struct free_work;  /* handle pending free request */
+	struct zram_slot_free *slot_free_rq; /* list head of free request */
+
 	struct request_queue *queue;
 	struct gendisk *disk;
 	int init_done;
-	/* Prevent concurrent execution of device init, reset and R/W request */
+	
 	struct rw_semaphore init_lock;
 	/*
 	 * This is the limit on amount of *uncompressed* worth of data
 	 * we can store in a disk.
 	 */
 	u64 disksize;	/* bytes */
+	spinlock_t slot_free_lock;
 
 	struct zram_stats stats;
 };
