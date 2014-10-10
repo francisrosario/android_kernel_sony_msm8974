@@ -158,6 +158,12 @@ config CPU_FREQ_DEFAULT_GOV_SAVAGEDZEN
     bool "SavagedZen"
     select CPU_FREQ_GOV_SAVAGEDZEN
 
+config CPU_FREQ_DEFAULT_GOV_SMARTASSH3
+	bool "smartassH3"
+	select CPU_FREQ_GOV_SMARTASSH3
+	help
+	  Use the CPUFreq governor 'slp' as default.
+
 config CPU_FREQ_DEFAULT_GOV_INTERACTIVEX
     bool "interactiveX"
     select CPU_FREQ_GOV_INTERACTIVEX
@@ -453,6 +459,9 @@ config CPU_FREQ_GOV_USERSPACE
 
 	  If in doubt, say Y.
 
+config CPU_FREQ_GOV_SLP
+	tristate "'slp' cpufreq policy governor"
+
 config CPU_FREQ_GOV_ONDEMAND
 	tristate "'ondemand' cpufreq policy governor"
 	select CPU_FREQ_TABLE
@@ -470,6 +479,12 @@ config CPU_FREQ_GOV_ONDEMAND
 	  For details, take a look at linux/Documentation/cpu-freq.
 
 	  If in doubt, say N.
+
+config CPU_FREQ_GOV_SMARTASSH3
+	tristate "'smartassH3' cpufreq governor"
+	depends on CPU_FREQ
+	help
+    		'smartassH3' - a "smart" governor
 
 config CPUFREQ_ID_PERFLOCK
 	bool "Intellidemand Performance Lock"
@@ -525,6 +540,12 @@ config CPU_FREQ_WAKEUP_BOOST
 	help
 	  This will boost CPU clock frequences during wakeup in order to
 	  minimize wakeup time.
+
+config CPU_FREQ_DEFAULT_GOV_SLP
+	bool "slp"
+	select CPU_FREQ_GOV_SLP
+	help
+	  Use the CPUFreq governor 'slp' as default.
 
 config CPU_FREQ_MIN_TICKS
 	int "Ticks between governor polling interval."
