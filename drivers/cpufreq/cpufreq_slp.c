@@ -42,10 +42,6 @@
 
 #define RQ_AVG_TIMER_RATE	10
 
-extern void apenable_auto_hotplug(bool state);
-extern bool apget_enable_auto_hotplug(void);
-static bool prev_apenable;
-
 struct runqueue_data {
 	unsigned int nr_run_avg;
 	unsigned int update_rate;
@@ -1266,9 +1262,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 	switch (event) {
 	case CPUFREQ_GOV_START:
-		prev_apenable = apget_enable_auto_hotplug();
-		apenable_auto_hotplug(false);
-		
 		if ((!cpu_online(cpu)) || (!policy->cur))
 			return -EINVAL;
 
@@ -1326,7 +1319,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_STOP:
-		apenable_auto_hotplug(prev_apenable);
 		
 #ifdef CONFIG_HAS_EARLYSUSPEND
 		unregister_early_suspend(&early_suspend);
